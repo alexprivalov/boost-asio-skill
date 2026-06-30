@@ -1,0 +1,14 @@
+# Builds the classic example on a very old, EOL distro to prove old-Boost support.
+# Ubuntu 18.04 = Boost 1.65, g++ 7, cmake 3.10 (predates io_context).
+FROM ubuntu:18.04
+# 18.04 is EOL — its apt mirrors moved to old-releases.
+RUN sed -i 's|http://archive.ubuntu.com|http://old-releases.ubuntu.com|g; s|http://security.ubuntu.com|http://old-releases.ubuntu.com|g' /etc/apt/sources.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends g++ cmake libboost-dev libboost-system-dev python3 \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY CMakeLists.txt feed_server.cpp /src/
+# Classic out-of-source build (cmake 3.10 has no -S/-B).
+RUN mkdir build && cd build && cmake .. && make && echo "built on $(g++ --version|head -1), Boost $(dpkg -s libboost-dev|grep -o '[0-9.]*' |head -1)"
+EXPOSE 9093
+CMD ["./build/feed_server"]

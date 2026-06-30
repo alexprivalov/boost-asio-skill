@@ -66,7 +66,10 @@ cp SKILL.md .claude/skills/boost-asio-pro.md
 Both are written entirely from this skill and double as its regression tests (CI builds them and runs `test_client.py` on every push):
 
 - [`examples/market-data-feed/`](examples/market-data-feed/) — full-duplex framed-protocol server in the **C++20 coroutine** style. Verified on macOS (clang/Boost 1.90), Ubuntu 24.04, and Debian trixie.
-- [`examples/market-data-feed-precpp20/`](examples/market-data-feed-precpp20/) — the same server in the **pre-C++20 callback** style (no `co_await`), compiled `-std=c++17`. Also verified on **Debian bookworm (Boost 1.74)**, where the coroutine version can't build — showing the skill's pre-coroutine guidance works on older toolchains.
+- [`examples/market-data-feed-precpp20/`](examples/market-data-feed-precpp20/) — the same server in the **pre-C++20 callback** style (no `co_await`), compiled `-std=c++17` (C++11-clean). Verified on macOS, Ubuntu, Debian trixie, **Debian bookworm (Boost 1.74)**, Fedora, and **Windows/MSVC**, at C++11/14/17.
+- [`examples/market-data-feed-classic/`](examples/market-data-feed-classic/) — the same server in the **classic pre-`io_context` style** (`io_service`, `strand.wrap`, `expires_from_now`, linked Boost.System). Verified back to **Boost 1.62 (Debian 9, 2016)** and Ubuntu 18.04, as well as current Boost — the example to copy if you're on an old Boost.
+
+**Boost floors by style:** coroutine ≥ 1.77 · pre-C++20 callback ≥ 1.74 (`any_io_executor`) · classic ≥ 1.62.
 
 ## Boost.Asio vs Standalone Asio
 
