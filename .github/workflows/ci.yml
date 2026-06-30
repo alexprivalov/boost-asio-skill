@@ -1,7 +1,7 @@
 name: CI
 
 # Regression gate for the skill: build both worked examples and run their
-# integration tests on every platform the READMEs claim support for.
+# integration tests across platforms, compilers, C++ standards, and Boost versions.
 on:
   push:
     branches: [main]
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # C++20 coroutine + pre-C++20 callback examples on macOS and Ubuntu.
+  # Both examples on macOS and Ubuntu.
   native:
     name: ${{ matrix.example.dir }} · ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -61,18 +61,12 @@ jobs:
       - run: apt-get update && apt-get install -y g++ cmake make libboost-dev libssl-dev python3
       - run: cmake -S . -B build && cmake --build build
       - name: Integration test
-        env:
-          FEED_PORT: "9090"
+        env: { FEED_PORT: "9090" }
         run: |
           ./build/feed_server & SERVER=$!
-          sleep 2
-          python3 test_client.py
-          RC=$?
-          kill $SERVER 2>/dev/null || true
-          exit $RC
+          sleep 2; python3 test_client.py; RC=$?; kill $SERVER 2>/dev/null || true; exit $RC
 
-  # Showcase: the pre-C++20 callback example builds on OLD Boost (bookworm 1.74),
-  # where the coroutine example cannot.
+  # Pre-C++20 callback example builds on OLD Boost (bookworm 1.74) where coroutines can't.
   precpp20-debian-bookworm:
     name: market-data-feed-precpp20 · debian:bookworm (Boost 1.74)
     runs-on: ubuntu-latest
@@ -85,12 +79,77 @@ jobs:
       - run: apt-get update && apt-get install -y g++ cmake make libboost-dev libssl-dev python3
       - run: cmake -S . -B build && cmake --build build
       - name: Integration test
-        env:
-          FEED_PORT: "9092"
+        env: { FEED_PORT: "9092" }
         run: |
           ./build/feed_server & SERVER=$!
-          sleep 2
-          python3 test_client.py
+          sleep 2; python3 test_client.py; RC=$?; kill $SERVER 2>/dev/null || true; exit $RC
+
+  # Verify the pre-C++20 example at each C++ standard (it is C++11-clean).
+  precpp20-standards:
+    name: market-data-feed-precpp20 · c++${{ matrix.std }}
+    runs-on: ubuntu-latest
+    container: debian:bookworm
+    strategy:
+      fail-fast: false
+      matrix:
+        std: ["11", "14", "17"]
+    defaults:
+      run:
+        working-directory: examples/market-data-feed-precpp20
+    steps:
+      - uses: actions/checkout@v4
+      - run: apt-get update && apt-get install -y g++ cmake make libboost-dev python3
+      - run: cmake -S . -B build -DCMAKE_CXX_STANDARD=${{ matrix.std }} && cmake --build build
+      - name: Integration test
+        env: { FEED_PORT: "9092" }
+        run: |
+          ./build/feed_server & SERVER=$!
+          sleep 2; python3 test_client.py; RC=$?; kill $SERVER 2>/dev/null || true; exit $RC
+
+  # Fedora (recent g++ / Boost).
+  precpp20-fedora:
+    name: market-data-feed-precpp20 · fedora:latest (g++)
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    defaults:
+      run:
+        working-directory: examples/market-data-feed-precpp20
+    steps:
+      - uses: actions/checkout@v4
+      - run: dnf install -y gcc-c++ cmake boost-devel python3
+      - run: cmake -S . -B build && cmake --build build
+      - name: Integration test
+        env: { FEED_PORT: "9092" }
+        run: |
+          ./build/feed_server & SERVER=$!
+          sleep 2; python3 test_client.py; RC=$?; kill $SERVER 2>/dev/null || true; exit $RC
+
+  # Windows / MSVC, using the runner's preinstalled Boost. The portable byte-order
+  # codec (no <arpa/inet.h>) is what lets this build unchanged.
+  precpp20-windows:
+    name: market-data-feed-precpp20 · windows-latest (MSVC)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: examples/market-data-feed-precpp20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locate preinstalled Boost
+        run: |
+          BROOT_VAR=$(env | sed -n 's/^\(BOOST_ROOT_[0-9_]*\)=.*/\1/p' | sort -V | tail -1)
+          echo "Using $BROOT_VAR = $(printenv "$BROOT_VAR")"
+          echo "BOOST_ROOT=$(printenv "$BROOT_VAR")" >> "$GITHUB_ENV"
+      - name: Configure & build
+        run: |
+          cmake -S . -B build -DBOOST_ROOT="$BOOST_ROOT" -DBoost_NO_SYSTEM_PATHS=ON
+          cmake --build build --config Release
+      - name: Integration test
+        env: { FEED_PORT: "9092" }
+        run: |
+          ./build/Release/feed_server.exe & SERVER=$!
+          sleep 3
+          python test_client.py
           RC=$?
           kill $SERVER 2>/dev/null || true
           exit $RC

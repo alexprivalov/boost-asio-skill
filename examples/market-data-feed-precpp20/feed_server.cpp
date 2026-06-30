@@ -11,7 +11,6 @@
 
 #include <boost/asio.hpp>
 
-#include <arpa/inet.h>   // ntohl / htonl  (skill framing example uses these)
 
 #include <array>
 #include <chrono>
@@ -27,7 +26,6 @@
 namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
 using boost::system::error_code;
-using namespace std::chrono_literals;
 
 // Frame types
 enum : std::uint8_t {
@@ -41,14 +39,26 @@ enum : std::uint8_t {
     ERROR_FRAME = 0x12,
 };
 
+// Portable big-endian (network order) 32-bit codec — no <arpa/inet.h> / <winsock2.h>,
+// so this builds unchanged on Linux, macOS, and Windows/MSVC.
+static void put_be32(unsigned char* p, std::uint32_t v) {
+    p[0] = static_cast<unsigned char>(v >> 24);
+    p[1] = static_cast<unsigned char>(v >> 16);
+    p[2] = static_cast<unsigned char>(v >> 8);
+    p[3] = static_cast<unsigned char>(v);
+}
+static std::uint32_t get_be32(const unsigned char* p) {
+    return (std::uint32_t(p[0]) << 24) | (std::uint32_t(p[1]) << 16)
+         | (std::uint32_t(p[2]) << 8)  |  std::uint32_t(p[3]);
+}
+
 // Build a wire frame: [4-byte BE length N][1-byte type][N-1 payload].
 // N counts the type byte plus the payload.
 static std::string make_frame(std::uint8_t type, const std::string& payload) {
     std::uint32_t n = static_cast<std::uint32_t>(1 + payload.size());
-    std::uint32_t len_be = htonl(n);
     std::string frame;
     frame.resize(4);
-    std::memcpy(&frame[0], &len_be, 4);
+    put_be32(reinterpret_cast<unsigned char*>(&frame[0]), n);
     frame.push_back(static_cast<char>(type));
     frame.append(payload);
     return frame;
@@ -63,7 +73,7 @@ class connection : public std::enable_shared_from_this<connection> {
     bool writing_ = false;
 
     // framing read state
-    std::uint32_t len_be_ = 0;       // 4-byte length buffer (network order)
+    unsigned char len_buf_[4] = {};  // 4-byte big-endian length, decoded with get_be32
     std::string body_;               // type byte + payload
 
     // one ticker timer per active subscription
@@ -105,12 +115,12 @@ private:
     // ---- framing: read 4-byte length fully, then body fully (composed reads) ----
     void do_read_header() {
         auto self = shared_from_this();
-        asio::async_read(socket_, asio::buffer(&len_be_, sizeof len_be_),
+        asio::async_read(socket_, asio::buffer(len_buf_, sizeof len_buf_),
             asio::bind_executor(strand_,
                 [this, self](error_code ec, std::size_t) {
                     if (ec) return;                 // self drops → socket closes
                     on_frame_received();            // any frame resets idle timer
-                    std::uint32_t n = ntohl(len_be_);
+                    std::uint32_t n = get_be32(len_buf_);
                     if (n == 0 || n > (16u * 1024u * 1024u)) {
                         send(make_frame(ERROR_FRAME, "bad frame length"));
                         return;                     // drop connection
@@ -161,7 +171,7 @@ private:
 
     void schedule_tick(const std::string& symbol,
                        std::shared_ptr<asio::steady_timer> timer) {
-        timer->expires_after(250ms);
+        timer->expires_after(std::chrono::milliseconds(250));
         auto self = shared_from_this();
         timer->async_wait(asio::bind_executor(strand_,
             [this, self, symbol, timer](error_code ec) {
@@ -177,7 +187,7 @@ private:
 
     // ---- watchdog idle timeout (skill: arm_timeout, re-arm on each frame) ----
     void arm_timeout() {
-        idle_timer_.expires_after(30s);
+        idle_timer_.expires_after(std::chrono::seconds(30));
         auto self = shared_from_this();
         idle_timer_.async_wait(asio::bind_executor(strand_,
             [this, self](error_code ec) {

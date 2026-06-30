@@ -22,15 +22,20 @@ docker run --rm -p 9092:9092 feed-pc
 FEED_PORT=9092 python3 test_client.py
 ```
 
-## Verified
+## Oldest Boost, and C++ standards
 
-The callback style has **no minimum-Boost floor** for coroutine headers, so it builds where the coroutine example cannot:
+- **Oldest compatible Boost: 1.74.** The callback strand uses `asio::any_io_executor`, introduced in Boost 1.74 (Asio 1.18). Verified: builds on 1.74 (Debian bookworm), fails on 1.71 (Ubuntu 20.04, `'any_io_executor' is not a member of 'asio'`). `CMakeLists.txt` enforces this with `find_package(Boost 1.74 REQUIRED)`. To go older, swap in the legacy `asio::io_context::strand`.
+- **C++ standard: C++11 and up.** The code is C++11-clean (no `co_await`, no `std::chrono_literals` — uses `std::chrono::milliseconds(250)` etc.). Verified building and running at `-std=c++11`, `c++14`, and `c++17`. Override with `-DCMAKE_CXX_STANDARD=11`.
+
+## Verified (all in CI)
 
 | Platform | Compiler | Boost | Build | `test_client.py` |
 |----------|----------|-------|-------|------------------|
-| macOS (brew) | Apple clang 17 | 1.90 | ✅ | ✅ all pass |
-| Ubuntu 24.04 | g++ 13.3 | 1.83 | ✅ | ✅ all pass |
+| macOS | Apple clang 17 | 1.90 | ✅ | ✅ |
+| Ubuntu 24.04 | g++ 13.3 | 1.83 | ✅ | ✅ |
 | Debian trixie | g++ 14.2 | 1.83 | ✅ | — |
-| **Debian bookworm** | **g++ 12.2** | **1.74** | **✅** | **✅ all pass** |
+| **Debian bookworm** | **g++ 12.2** | **1.74** | **✅** | **✅** (c++11/14/17) |
+| Fedora 44 | g++ 16.1 | 1.90 | ✅ | ✅ |
+| **Windows** | **MSVC (VS 2022)** | runner Boost | ✅ | ✅ |
 
-> Contrast: the C++20 coroutine example fails on bookworm (Boost 1.74 lacks `awaitable_operators.hpp`). Note also that the **stackful `asio::spawn`** style would *not* build on bookworm either — its 3-arg signature needs Boost ≥ 1.80. Only the callback style spans the whole range.
+> Contrast: the C++20 coroutine example fails on bookworm (Boost 1.74 lacks `awaitable_operators.hpp`), and the **stackful `asio::spawn`** style would also fail there (3-arg signature needs Boost ≥ 1.80). Only this callback style spans the whole range — and, thanks to the portable big-endian codec, Windows/MSVC too.

@@ -32,7 +32,10 @@ Both libraries share the same author and API — only the namespace and includes
 - `experimental/awaitable_operators.hpp` (the `||`/`&&` operators): **Boost ≥ 1.77** / Asio ≥ 1.20
 - `as_tuple` completion token: **Boost ≥ 1.79** / Asio ≥ 1.21
 - `co_composed` (custom composed ops): **Boost ≥ 1.85** / Asio ≥ 1.30
-- `asio::spawn(ex, fn, completion_token)` (the 3-arg, completion-token form): **Boost ≥ 1.80**. Older Boost (e.g. 1.74) has only the 2-arg `spawn(ex, fn)` form. The **callback** style has no such floor — it builds on Boost as old as 1.70.
+- `asio::spawn(ex, fn, completion_token)` (the 3-arg, completion-token form): **Boost ≥ 1.80**. Older Boost (e.g. 1.74) has only the 2-arg `spawn(ex, fn)` form.
+- `asio::any_io_executor` (the type-erased executor used by `strand<any_io_executor>` and as `tcp::socket`'s default executor): **Boost ≥ 1.74** (Asio 1.18). This is the floor for the **callback** examples here — verified: they build on Boost 1.74 (Debian bookworm) but not 1.71 (Ubuntu 20.04). To go older, replace it with the legacy `asio::io_context::strand`.
+
+Also language-standard, not library: the chrono literals `250ms` / `30s` (and `using namespace std::chrono_literals`) are **C++14**. For a true C++11 build use the function forms `std::chrono::milliseconds(250)` / `std::chrono::seconds(30)`.
 
 Common pitfall: **Debian bookworm ships Boost 1.74**, where `awaitable_operators.hpp` does not exist — `#include` fails with "No such file or directory". Use Debian trixie (1.83), Ubuntu 24.04, or vendored Boost for these features.
 
