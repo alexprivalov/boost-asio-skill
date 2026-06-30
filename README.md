@@ -58,11 +58,15 @@ cp SKILL.md .claude/skills/boost-asio-pro.md
 | Lifecycle | `signal_set` graceful shutdown, `async_accept(make_strand(...))` |
 | Buffers | `buffer()`, `dynamic_buffer`, lifetime rules |
 | Build | CMake for Boost.Asio, standalone Asio, dual-mode, **minimum Boost versions** |
+| Pre-C++20 | Callbacks (`shared_from_this` + `bind_executor`) and stackful `asio::spawn`/`yield_context` for C++11–17; watchdog timeouts, self-rescheduling timers; minimum-version notes |
 | Portability | Namespace shim for Boost.Asio ↔ standalone Asio |
 
-## Worked example
+## Worked examples
 
-[`examples/market-data-feed/`](examples/market-data-feed/) is a full-duplex framed-protocol server written entirely from this skill and **compiled + integration-tested** on macOS (clang, Homebrew Boost), Ubuntu 24.04, and Debian trixie. It doubles as the skill's regression test: if the skill is correct, the example builds and `test_client.py` passes.
+Both are written entirely from this skill and double as its regression tests (CI builds them and runs `test_client.py` on every push):
+
+- [`examples/market-data-feed/`](examples/market-data-feed/) — full-duplex framed-protocol server in the **C++20 coroutine** style. Verified on macOS (clang/Boost 1.90), Ubuntu 24.04, and Debian trixie.
+- [`examples/market-data-feed-precpp20/`](examples/market-data-feed-precpp20/) — the same server in the **pre-C++20 callback** style (no `co_await`), compiled `-std=c++17`. Also verified on **Debian bookworm (Boost 1.74)**, where the coroutine version can't build — showing the skill's pre-coroutine guidance works on older toolchains.
 
 ## Boost.Asio vs Standalone Asio
 

@@ -1,44 +1,45 @@
 name: CI
 
-# Regression gate for the skill: build the worked example and run its
-# integration test on every platform the README claims support for.
+# Regression gate for the skill: build both worked examples and run their
+# integration tests on every platform the READMEs claim support for.
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
 
-defaults:
-  run:
-    working-directory: examples/market-data-feed
-
 jobs:
+  # C++20 coroutine + pre-C++20 callback examples on macOS and Ubuntu.
   native:
-    name: ${{ matrix.os }}
+    name: ${{ matrix.example.dir }} · ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest]
+        example:
+          - { dir: market-data-feed, port: "9090" }
+          - { dir: market-data-feed-precpp20, port: "9092" }
+    defaults:
+      run:
+        working-directory: examples/${{ matrix.example.dir }}
     steps:
       - uses: actions/checkout@v4
-
       - name: Install Boost (macOS)
         if: runner.os == 'macOS'
         run: brew install boost
-
       - name: Install Boost (Ubuntu)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libboost-dev libssl-dev
-
       - name: Configure & build
         run: |
           PREFIX_ARG=""
           [ "$RUNNER_OS" = "macOS" ] && PREFIX_ARG="-DCMAKE_PREFIX_PATH=$(brew --prefix)"
           cmake -S . -B build $PREFIX_ARG
           cmake --build build
-
       - name: Integration test
+        env:
+          FEED_PORT: ${{ matrix.example.port }}
         run: |
           ./build/feed_server & SERVER=$!
           sleep 2
@@ -47,24 +48,45 @@ jobs:
           kill $SERVER 2>/dev/null || true
           exit $RC
 
-  debian-trixie:
-    name: debian:trixie (g++)
+  # Coroutine example needs Boost >= 1.77; Debian trixie ships 1.83.
+  coroutine-debian-trixie:
+    name: market-data-feed · debian:trixie (g++)
     runs-on: ubuntu-latest
     container: debian:trixie
+    defaults:
+      run:
+        working-directory: examples/market-data-feed
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install toolchain
-        run: |
-          apt-get update
-          apt-get install -y g++ cmake make libboost-dev libssl-dev python3
-
-      - name: Configure & build
-        run: |
-          cmake -S . -B build
-          cmake --build build
-
+      - run: apt-get update && apt-get install -y g++ cmake make libboost-dev libssl-dev python3
+      - run: cmake -S . -B build && cmake --build build
       - name: Integration test
+        env:
+          FEED_PORT: "9090"
+        run: |
+          ./build/feed_server & SERVER=$!
+          sleep 2
+          python3 test_client.py
+          RC=$?
+          kill $SERVER 2>/dev/null || true
+          exit $RC
+
+  # Showcase: the pre-C++20 callback example builds on OLD Boost (bookworm 1.74),
+  # where the coroutine example cannot.
+  precpp20-debian-bookworm:
+    name: market-data-feed-precpp20 · debian:bookworm (Boost 1.74)
+    runs-on: ubuntu-latest
+    container: debian:bookworm
+    defaults:
+      run:
+        working-directory: examples/market-data-feed-precpp20
+    steps:
+      - uses: actions/checkout@v4
+      - run: apt-get update && apt-get install -y g++ cmake make libboost-dev libssl-dev python3
+      - run: cmake -S . -B build && cmake --build build
+      - name: Integration test
+        env:
+          FEED_PORT: "9092"
         run: |
           ./build/feed_server & SERVER=$!
           sleep 2

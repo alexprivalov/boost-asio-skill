@@ -1,0 +1,14 @@
+# Pre-C++20 (callback) build under g++. No C++20 coroutine headers, so this
+# compiles on OLD Boost too (incl. Debian bookworm's Boost 1.74, where the
+# coroutine example fails). Pass BASE to pick the distro.
+ARG BASE=debian:bookworm
+FROM ${BASE}
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        g++ cmake make libboost-dev libssl-dev python3 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY CMakeLists.txt feed_server.cpp /src/
+RUN cmake -S . -B build && cmake --build build -j && echo "g++ build OK: $(g++ --version | head -1)"
+EXPOSE 9092
+CMD ["./build/feed_server"]
