@@ -120,9 +120,10 @@ int main() {
 **Explicit error handling with `as_tuple`:**
 ```cpp
 auto [ec, n] = co_await socket.async_read_some(
-    asio::buffer(data), asio::as_tuple);
+    asio::buffer(data), asio::as_tuple(asio::use_awaitable));
 if (ec) { /* handle error, no exception */ }
 ```
+**Wrap, don't use bare `as_tuple`.** Always write `as_tuple(use_awaitable)`. Bare `asio::as_tuple` resolves against the operation's *default* completion token (often `deferred`), which compiles in some contexts but fails in others — wrapping an explicit base token is unambiguous everywhere.
 
 **With `redirect_error`:**
 ```cpp
@@ -204,6 +205,29 @@ private:
 - One strand per connection → read loop and write loop never run their handlers concurrently.
 - Write queue + `writing_` flag → at most one `async_write` in flight, so frames never interleave.
 - `enable_shared_from_this` + capturing `self` in every `co_spawn` → the connection survives until all of its read/write/timer chains finish.
+- The accepted socket from `async_accept(make_strand(...))` is `basic_stream_socket<tcp, strand<...>>`, **not** `tcp::socket`. Take it **by value** (`connection(tcp::socket s)`, store `tcp::socket socket_`) — the strand executor type-erases into `any_io_executor` on the move. Passing that accepted socket to a `tcp::socket&` (by reference) instead will **fail to compile** — use `auto` or accept by value.
+
+**Strand from inside a coroutine** (when `io` isn't a captured local): get the executor from the coroutine and make a strand off it — no `io_context&` needed:
+```cpp
+auto ex = co_await asio::this_coro::executor;
+auto socket = co_await acceptor.async_accept(asio::make_strand(ex), asio::use_awaitable);
+```
+
+**Run the read loop and idle watch together** — two `awaitable<void>` branches; don't inspect the result, the first to finish unwinds the other:
+```cpp
+using namespace asio::experimental::awaitable_operators;
+co_await (read_loop() || idle_watch(socket_, timer_));   // either returning tears down the connection
+```
+
+**Stopping a detached side-coroutine** (e.g. a per-symbol ticker that must end on unsubscribe/close): a detached `co_spawn` won't stop itself. Either (a) have its loop re-check a flag each iteration and `co_return` when gone:
+```cpp
+while (subscriptions_.contains(symbol) && socket_.is_open()) {
+    timer.expires_after(250ms);
+    co_await timer.async_wait(asio::as_tuple(asio::use_awaitable));
+    if (/* still subscribed */) send(make_tick(symbol));
+}
+```
+or (b) spawn it with a `cancellation_signal` and `emit()` cancellation on unsubscribe. The flag approach is simpler for per-subscription tickers.
 
 ## SSL/TLS
 
@@ -265,7 +289,7 @@ asio::awaitable<void> with_timeout(tcp::socket& socket) {
 // is the signal to keep waiting, NOT an error. Genuine expiry resolves with no error.
 asio::awaitable<void> idle_watch(tcp::socket& sock, asio::steady_timer& timer) {
     for (;;) {
-        auto [ec] = co_await timer.async_wait(asio::as_tuple);
+        auto [ec] = co_await timer.async_wait(asio::as_tuple(asio::use_awaitable));
         if (ec == asio::error::operation_aborted) continue;  // re-armed → keep waiting
         if (ec) co_return;                                   // timer error
         sock.close();                                        // real timeout fired
@@ -546,9 +570,10 @@ target_compile_options(myapp PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fcoroutines>)
 
 ## Header-Only Usage
 
-**Boost.Asio:** Asio is header-only by default. The only thing that pulls in a Boost library to link is `boost::system::error_code`'s out-of-line symbols, so for a truly link-free build define **`BOOST_ERROR_CODE_HEADER_ONLY`** (this is the one that matters — set it in CMake as shown above). `BOOST_ASIO_HEADER_ONLY` is rarely needed and only relevant if separate compilation was previously enabled; you do **not** normally need both.
+**Boost.Asio:** Asio is header-only by default. The only thing that pulls in a Boost library to link is `boost::system::error_code`'s out-of-line symbols, so for a truly link-free build define **`BOOST_ERROR_CODE_HEADER_ONLY`**. `BOOST_ASIO_HEADER_ONLY` is rarely needed and only relevant if separate compilation was previously enabled; you do **not** normally need both.
+
+**Define `BOOST_ERROR_CODE_HEADER_ONLY` in exactly ONE place — prefer CMake** (`target_compile_definitions`, as shown above). Defining it in CMake *and* with a source `#define` triggers `-Wmacro-redefined`. So in source, just include — no `#define`:
 ```cpp
-#define BOOST_ERROR_CODE_HEADER_ONLY  // no Boost.System to link
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/asio/experimental/awaitable_operators.hpp>
