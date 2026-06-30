@@ -124,25 +124,28 @@ jobs:
           ./build/feed_server & SERVER=$!
           sleep 2; python3 test_client.py; RC=$?; kill $SERVER 2>/dev/null || true; exit $RC
 
-  # Windows / MSVC, using the runner's preinstalled Boost. The portable byte-order
-  # codec (no <arpa/inet.h>) is what lets this build unchanged.
+  # Windows / MSVC. The portable byte-order codec (no <arpa/inet.h>) is what lets
+  # this build unchanged. Boost is installed explicitly (the runner images no
+  # longer ship it); windows-2022 is pinned so the prebuilt Boost matches.
   precpp20-windows:
-    name: market-data-feed-precpp20 · windows-latest (MSVC)
-    runs-on: windows-latest
+    name: market-data-feed-precpp20 · windows-2022 (MSVC)
+    runs-on: windows-2022
     defaults:
       run:
         shell: bash
         working-directory: examples/market-data-feed-precpp20
     steps:
       - uses: actions/checkout@v4
-      - name: Locate preinstalled Boost
-        run: |
-          BROOT_VAR=$(env | sed -n 's/^\(BOOST_ROOT_[0-9_]*\)=.*/\1/p' | sort -V | tail -1)
-          echo "Using $BROOT_VAR = $(printenv "$BROOT_VAR")"
-          echo "BOOST_ROOT=$(printenv "$BROOT_VAR")" >> "$GITHUB_ENV"
+      - name: Install Boost
+        uses: MarkusJx/install-boost@v2
+        id: boost
+        with:
+          boost_version: 1.83.0
+          platform_version: 2022
+          toolset: msvc
       - name: Configure & build
         run: |
-          cmake -S . -B build -DBOOST_ROOT="$BOOST_ROOT" -DBoost_NO_SYSTEM_PATHS=ON
+          cmake -S . -B build -DBOOST_ROOT="${{ steps.boost.outputs.BOOST_ROOT }}"
           cmake --build build --config Release
       - name: Integration test
         env: { FEED_PORT: "9092" }
