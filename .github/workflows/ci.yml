@@ -1,0 +1,74 @@
+name: CI
+
+# Regression gate for the skill: build the worked example and run its
+# integration test on every platform the README claims support for.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: examples/market-data-feed
+
+jobs:
+  native:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Boost (macOS)
+        if: runner.os == 'macOS'
+        run: brew install boost
+
+      - name: Install Boost (Ubuntu)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libboost-dev libssl-dev
+
+      - name: Configure & build
+        run: |
+          PREFIX_ARG=""
+          [ "$RUNNER_OS" = "macOS" ] && PREFIX_ARG="-DCMAKE_PREFIX_PATH=$(brew --prefix)"
+          cmake -S . -B build $PREFIX_ARG
+          cmake --build build
+
+      - name: Integration test
+        run: |
+          ./build/feed_server & SERVER=$!
+          sleep 2
+          python3 test_client.py
+          RC=$?
+          kill $SERVER 2>/dev/null || true
+          exit $RC
+
+  debian-trixie:
+    name: debian:trixie (g++)
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          apt-get update
+          apt-get install -y g++ cmake make libboost-dev libssl-dev python3
+
+      - name: Configure & build
+        run: |
+          cmake -S . -B build
+          cmake --build build
+
+      - name: Integration test
+        run: |
+          ./build/feed_server & SERVER=$!
+          sleep 2
+          python3 test_client.py
+          RC=$?
+          kill $SERVER 2>/dev/null || true
+          exit $RC
