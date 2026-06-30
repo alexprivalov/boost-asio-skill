@@ -1,0 +1,19 @@
+# Linux verification: builds the generated server under g++, exercising the
+# skill's "-fcoroutines" GCC guard and the Boost::headers + BOOST_ERROR_CODE_HEADER_ONLY
+# header-only recipe. Pass BASE to pick the distro.
+ARG BASE=debian:bookworm
+FROM ${BASE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# libboost-dev = header-only Boost.Asio. No libboost-system needed (header-only).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        g++ cmake make libboost-dev libssl-dev ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY CMakeLists.txt feed_server.cpp /src/
+RUN cmake -S . -B build && cmake --build build -j && echo "g++ build OK: $(g++ --version | head -1)"
+
+EXPOSE 9090
+CMD ["./build/feed_server"]
