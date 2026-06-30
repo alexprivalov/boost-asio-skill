@@ -40,7 +40,7 @@ def main():
     # 1. PING -> PONG
     s.sendall(frame(PING))
     t, _ = read_frame(s)
-    assert t == PONG, f"expected PONG got {t:#x}"
+    assert t == PONG, "expected PONG got {:#x}".format(t)
     print("PASS ping/pong")
 
     # 2. SUBSCRIBE -> server pushes TICKs full-duplex
@@ -51,9 +51,9 @@ def main():
         t, p = read_frame(s)
         if t == TICK:
             ticks.append(p.decode())
-    assert len(ticks) >= 3, f"expected >=3 ticks, got {ticks}"
+    assert len(ticks) >= 3, "expected >=3 ticks, got {}".format(ticks)
     assert all(p.startswith("AAPL:") for p in ticks), ticks
-    print(f"PASS full-duplex push: {ticks}")
+    print("PASS full-duplex push: {}".format(ticks))
 
     # 3. PING while subscribed still answered (interleaved with pushes)
     s.sendall(frame(PING))

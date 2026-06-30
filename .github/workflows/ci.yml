@@ -125,27 +125,26 @@ jobs:
           ./build/feed_server & SERVER=$!
           sleep 2; python3 test_client.py; RC=$?; kill $SERVER 2>/dev/null || true; exit $RC
 
-  # Classic example on a very old, EOL distro (Ubuntu 18.04 = Boost 1.65, g++ 7,
-  # cmake 3.10 — predates io_context). actions/checkout's node20 can't run inside
-  # an 18.04 container (glibc too old), so we check out on the host and run the old
-  # toolchain via docker, with the server+client both inside the container.
-  classic-ubuntu-1804:
-    name: market-data-feed-classic · ubuntu:18.04 (Boost 1.65)
+  # Classic example on a genuinely OLD Boost (Debian 9 = Boost 1.62, g++ 6.3, 2016),
+  # which exercises the pre-1.66 io_service path of the shim. archive.debian.org is
+  # stable; stretch's cmake has a broken archive dep, so we compile directly with g++
+  # (header-only Asio + linked Boost.System). Checkout runs on the host because
+  # checkout's node20 won't run inside the old container.
+  classic-debian-9:
+    name: market-data-feed-classic · debian:9 (Boost 1.62)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build & test in ubuntu:18.04
+      - name: Build & test on Debian 9 / Boost 1.62
         run: |
-          docker run --rm -v "$PWD:/w" -w /w/examples/market-data-feed-classic ubuntu:18.04 bash -c '
+          docker run --rm -v "$PWD:/w" -w /w/examples/market-data-feed-classic debian:9 bash -c '
             set -e
-            # 18.04 is EOL; point apt at old-releases with just the base suite
-            # (the -updates/-security/-backports suites are not mirrored there).
-            echo "deb http://old-releases.ubuntu.com/ubuntu bionic main universe" > /etc/apt/sources.list
-            apt-get update -qq
-            apt-get install -y -qq g++ cmake libboost-dev libboost-system-dev python3
-            g++ --version | head -1; cmake --version | head -1; dpkg -s libboost-dev | grep Version
-            rm -rf build && mkdir build && cd build && cmake .. && make && cd ..
-            ./build/feed_server & sleep 2
+            echo "deb http://archive.debian.org/debian stretch main" > /etc/apt/sources.list
+            apt-get -o Acquire::Check-Valid-Until=false update -qq
+            apt-get install -y -qq --no-install-recommends g++ libboost-dev libboost-system-dev python3
+            g++ --version | head -1; dpkg -s libboost-dev | grep Version
+            g++ -std=c++11 -O1 feed_server.cpp -o feed_server -lboost_system -lpthread
+            ./feed_server & sleep 2
             FEED_PORT=9093 python3 test_client.py
           '
 
