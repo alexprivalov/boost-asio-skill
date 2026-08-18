@@ -1,0 +1,9 @@
+{
+  "name": "boost-asio-pro",
+  "description": "Production-grade async C++ networking with Boost.Asio / standalone Asio — style selection by Boost version, verified version floors, strand and lifetime rules, CI-verified examples for C++20 coroutine, pre-C++20 callback, and classic io_service styles.",
+  "version": "1.0.0",
+  "author": { "name": "Alex Chupryna" },
+  "homepage": "https://github.com/alexprivalov/boost-asio-skill",
+  "license": "MIT",
+  "keywords": ["boost", "asio", "cpp", "cpp20", "coroutines", "networking", "async"]
+}

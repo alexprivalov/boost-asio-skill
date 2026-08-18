@@ -1,0 +1,11 @@
+{
+  "name": "boost-asio-skill",
+  "owner": { "name": "Alex Chupryna" },
+  "plugins": [
+    {
+      "name": "boost-asio-pro",
+      "source": "./",
+      "description": "Async C++ networking with Boost.Asio / standalone Asio: picks the right style for the target Boost version, then applies verified strand, lifetime, and framing rules."
+    }
+  ]
+}
