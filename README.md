@@ -1,47 +1,61 @@
 # boost-asio-pro
 
-A [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview) / [Codex](https://openai.com/index/codex/) skill for writing correct, production-grade asynchronous C++ networking code with **Boost.Asio** and **standalone Asio**.
+An agent skill (for [Claude Code](https://code.claude.com/docs), Codex, and other tools that read `SKILL.md`) for writing correct, production-grade asynchronous C++ networking code with **Boost.Asio** and **standalone Asio**.
 
 ## What is this?
 
-This is an AI agent skill file — a structured reference document that helps AI coding assistants (Claude Code, OpenAI Codex, GitHub Copilot) write better Boost.Asio / standalone Asio code by providing:
+Asio's API changed shape three times — classic `io_service` → `io_context` → C++20 coroutines — and most Asio code on the internet is from the first era. Models trained on that code reach for `io_service`, `strand.wrap`, and `boost::bind`, or write coroutine code that doesn't compile against the Boost the user actually has.
 
-- Correct C++20 coroutine patterns (`co_await`, `awaitable`, `co_spawn`)
-- Strand-based thread safety rules
-- SSL/TLS stream handling
-- Timeout patterns with `awaitable_operators`
-- Composed async operations
-- Build configuration (CMake) for both Boost.Asio and standalone Asio
-- Common mistakes and their fixes
+This skill makes the agent pick the style from the toolchain first, then apply the rules that are genuinely easy to get wrong:
 
-## Installation
+- **Style selection** by Boost version × C++ standard (C++20 coroutines / callbacks / stackful `spawn` / classic `io_service`)
+- **Version floors verified by compiling**, not by reading docs (`awaitable_operators` ≥ 1.77, `as_tuple` ≥ 1.79, `any_io_executor` ≥ 1.74, `io_context` ≥ 1.66, …)
+- **Strand + write queue**: a strand serializes handler execution, not composed operations — two `async_write`s still interleave bytes
+- Buffer and connection lifetime rules, composed reads for framing, `operation_aborted` on re-armed timers
+- SSL/TLS, CMake for Boost.Asio / standalone / dual-mode, and a portability shim between the two
+- A pre-completion checklist the agent runs against its own code
 
-### Claude Code
+## Install
 
-```bash
-# Copy to your personal skills directory
-cp SKILL.md ~/.claude/skills/boost-asio-pro.md
+### Claude Code (plugin — recommended)
+
+```
+/plugin marketplace add alexprivalov/boost-asio-skill
+/plugin install boost-asio-pro@boost-asio-skill
 ```
 
-Or clone this repo:
-```bash
-git clone https://github.com/alexprivalov/boost-asio-skill.git ~/.claude/skills/boost-asio-pro
-```
+### Claude Code / Codex (manual)
 
-### Codex / Other Agents
+Skills are **directories** containing a `SKILL.md`, so copy the whole skill directory:
 
 ```bash
-mkdir -p ~/.agents/skills/boost-asio-pro
-cp SKILL.md ~/.agents/skills/boost-asio-pro/SKILL.md
+git clone https://github.com/alexprivalov/boost-asio-skill.git /tmp/boost-asio-skill
+
+# Claude Code (personal)
+mkdir -p ~/.claude/skills
+cp -R /tmp/boost-asio-skill/skills/boost-asio-pro ~/.claude/skills/
+
+# Codex and other tools that read ~/.agents
+mkdir -p ~/.agents/skills && cp -R /tmp/boost-asio-skill/skills/boost-asio-pro ~/.agents/skills/
+
+# Project-level
+mkdir -p .claude/skills && cp -R /tmp/boost-asio-skill/skills/boost-asio-pro .claude/skills/
 ```
 
-### As a project-level skill
+## Layout
 
-Add to your project's `.claude/skills/` directory:
-```bash
-mkdir -p .claude/skills
-cp SKILL.md .claude/skills/boost-asio-pro.md
 ```
+skills/boost-asio-pro/
+  SKILL.md                    # style selection, version floors, traps, checklist (always loaded)
+  references/coroutines.md    # C++20 coroutine style
+  references/pre-cpp20.md     # callbacks and stackful spawn (C++11–17)
+  references/classic-boost.md # pre-1.66 io_service era
+  references/ssl.md           # SSL/TLS (any style)
+  references/build.md         # CMake, header-only usage
+examples/                     # CI-verified servers, one per style
+```
+
+`SKILL.md` stays small so it costs little to load; the reference files are read only when the chosen style needs them.
 
 ## Coverage
 
@@ -50,30 +64,31 @@ cp SKILL.md .claude/skills/boost-asio-pro.md
 | Coroutines | `co_spawn`, `awaitable<T>`, `co_await`, `deferred`, `detached` |
 | Error handling | `as_tuple`, `redirect_error`, exception-based |
 | Thread safety | Strands, `bind_executor`, implicit vs explicit |
-| Full-duplex | Per-connection strand **+ write queue** (a strand alone does not stop interleaved writes), connection lifetime with `shared_from_this` |
+| Full-duplex | Per-connection strand **+ write queue**, lifetime via `shared_from_this` |
 | SSL/TLS | Client/server, certificate verification, SNI |
-| Timeouts | `awaitable_operators` (`\|\|`, `&&`), `steady_timer`, **re-armable idle timeout** |
+| Timeouts | `awaitable_operators` (`\|\|`, `&&`), `steady_timer`, re-armable idle timeout, watchdog |
 | Cancellation | `this_coro::cancellation_state`, `reset_cancellation_state` |
-| Networking | TCP server, resolver/DNS, line-based + **length-prefixed binary framing** |
+| Networking | TCP server, resolver/DNS, line-based + length-prefixed binary framing |
 | Lifecycle | `signal_set` graceful shutdown, `async_accept(make_strand(...))` |
 | Buffers | `buffer()`, `dynamic_buffer`, lifetime rules |
-| Build | CMake for Boost.Asio, standalone Asio, dual-mode, **minimum Boost versions** |
-| Pre-C++20 | Callbacks (`shared_from_this` + `bind_executor`) and stackful `asio::spawn`/`yield_context` for C++11–17; watchdog timeouts, self-rescheduling timers; minimum-version notes |
+| Build | CMake for Boost.Asio, standalone Asio, dual-mode, minimum Boost versions |
+| Pre-C++20 | Callbacks (`shared_from_this` + `bind_executor`) and stackful `asio::spawn`/`yield_context` |
+| Classic | `io_service`, `strand.wrap`, `expires_from_now`, Boost.System linkage |
 | Portability | Namespace shim for Boost.Asio ↔ standalone Asio |
 
 ## Worked examples
 
-Both are written entirely from this skill and double as its regression tests (CI builds them and runs `test_client.py` on every push):
+All three are written entirely from this skill and double as its regression tests — CI builds them and runs `test_client.py` on every push:
 
-- [`examples/market-data-feed/`](examples/market-data-feed/) — full-duplex framed-protocol server in the **C++20 coroutine** style. Verified on macOS (clang/Boost 1.90), Ubuntu 24.04, and Debian trixie.
-- [`examples/market-data-feed-precpp20/`](examples/market-data-feed-precpp20/) — the same server in the **pre-C++20 callback** style (no `co_await`), compiled `-std=c++17` (C++11-clean). Verified on macOS, Ubuntu, Debian trixie, **Debian bookworm (Boost 1.74)**, Fedora, and **Windows/MSVC**, at C++11/14/17.
-- [`examples/market-data-feed-classic/`](examples/market-data-feed-classic/) — the same server in the **classic pre-`io_context` style** (`io_service`, `strand.wrap`, `expires_from_now`, linked Boost.System). Verified back to **Boost 1.62 (Debian 9, 2016)** and Ubuntu 18.04, as well as current Boost — the example to copy if you're on an old Boost.
+- [`examples/market-data-feed/`](examples/market-data-feed/) — full-duplex framed-protocol server, **C++20 coroutine** style. Verified on macOS (clang/Boost 1.90), Ubuntu 24.04, Debian trixie.
+- [`examples/market-data-feed-precpp20/`](examples/market-data-feed-precpp20/) — same server, **pre-C++20 callback** style, compiled `-std=c++17` (C++11-clean). Verified on macOS, Ubuntu, Debian trixie, **Debian bookworm (Boost 1.74)**, Fedora, **Windows/MSVC**, at C++11/14/17.
+- [`examples/market-data-feed-classic/`](examples/market-data-feed-classic/) — same server, **classic pre-`io_context` style** (`io_service`, `strand.wrap`, `expires_from_now`, linked Boost.System). Verified back to **Boost 1.62 (Debian 9, 2016)** and on current Boost.
 
-**Boost floors by style:** coroutine ≥ 1.77 · pre-C++20 callback ≥ 1.74 (`any_io_executor`) · classic ≥ 1.62.
+**Boost floors by style:** coroutine ≥ 1.77 · pre-C++20 callback ≥ 1.74 · classic ≥ 1.62.
 
-## Boost.Asio vs Standalone Asio
+## Boost.Asio vs standalone Asio
 
-Both are supported. The skill includes a portability shim pattern:
+Both are supported; the skill includes a portability shim:
 
 ```cpp
 #ifdef USE_STANDALONE_ASIO
@@ -85,11 +100,10 @@ Both are supported. The skill includes a portability shim pattern:
 #endif
 ```
 
-## Official Documentation
+## Official documentation
 
 - Boost.Asio: https://www.boost.org/doc/libs/latest/doc/html/boost_asio.html
 - Standalone Asio: https://think-async.com/Asio/
-- Asio C++ Library (author's site): https://think-async.com/Asio/asio-1.30.2/doc/
 
 ## License
 
