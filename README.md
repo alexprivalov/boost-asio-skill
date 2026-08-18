@@ -32,6 +32,7 @@ Skills are **directories** containing a `SKILL.md`, so copy the whole skill dire
 git clone https://github.com/alexprivalov/boost-asio-skill.git /tmp/boost-asio-skill
 
 # Claude Code (personal)
+mkdir -p ~/.claude/skills
 cp -R /tmp/boost-asio-skill/skills/boost-asio-pro ~/.claude/skills/
 
 # Codex and other tools that read ~/.agents

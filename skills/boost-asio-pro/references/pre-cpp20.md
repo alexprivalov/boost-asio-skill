@@ -6,7 +6,7 @@ If you can't use C++20 `co_await`, the **same Asio library** (modern Boost or st
 1. **Completion handlers (callbacks)** — header-only, C++11, no extra dependencies. The recommended baseline.
 2. **Stackful coroutines** (`asio::spawn` + `yield_context`) — synchronous-looking like `co_await`, but built on Boost.Coroutine/Boost.Context, so it **must be linked** (not header-only) — see build note below.
 
-**Unchanged from the coroutine style** (these are library, not language, features): `io_context`, `make_strand`, `bind_executor`, `steady_timer`, `ssl::stream`, `signal_set`, `async_read`/`async_write`/`async_read_until`, buffers, `resolver`. Use them exactly as shown in references/coroutines.md.
+**Unchanged from the coroutine style** (these are library, not language, features): `io_context`, `make_strand`, `bind_executor`, `steady_timer`, `ssl::stream`, `signal_set`, `async_read`/`async_write`/`async_read_until`, buffers, `resolver`. Use them exactly as shown in [coroutines.md](coroutines.md).
 
 **Not available pre-C++20:** `co_await`/`awaitable<T>`, `co_spawn`, `use_awaitable`, the `||`/`&&` `awaitable_operators`, `as_tuple`, and `co_composed`. The table below gives the equivalent.
 

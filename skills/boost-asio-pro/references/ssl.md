@@ -4,9 +4,12 @@ Applies to every style — `ssl::stream<>` is a library feature, not a language 
 
 
 ```cpp
+#include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
 
+namespace asio = boost::asio;
 namespace ssl = asio::ssl;
+using tcp = asio::ip::tcp;
 
 asio::awaitable<void> tls_client(asio::io_context& io) {
     ssl::context ctx(ssl::context::tlsv13_client);
