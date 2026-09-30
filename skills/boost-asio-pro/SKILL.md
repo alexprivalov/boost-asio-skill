@@ -34,7 +34,7 @@ Reach for one of these and the build breaks on older distros:
 | `experimental/awaitable_operators.hpp` (the `\|\|` / `&&` operators) | **Boost ≥ 1.77** / Asio ≥ 1.20 |
 | `as_tuple` completion token | **Boost ≥ 1.79** / Asio ≥ 1.21 |
 | `co_composed` (custom composed ops) | **Boost ≥ 1.85** / Asio ≥ 1.30 |
-| 3-arg `asio::spawn(ex, fn, token)` | **Boost ≥ 1.80** (older Boost has only `spawn(ex, fn)`) |
+| 3-arg `asio::spawn(ex, fn, token)` | **Boost ≥ 1.80** — pass an explicit token such as `asio::detached`; avoid the default completion token (older Boost has only `spawn(ex, fn)`) |
 | `any_io_executor` (`strand<any_io_executor>`, `tcp::socket`'s default executor) | **Boost ≥ 1.74** — the floor for the callback style; below it, use legacy `io_context::strand` |
 | `io_context`, `make_strand`, `expires_after` | **Boost ≥ 1.66** — below it, classic `io_service` |
 
@@ -48,6 +48,8 @@ Language, not library: the chrono literals `250ms` / `30s` are **C++14**. For a 
 
 **Buffers do not own memory.** `asio::buffer()` is a view. Storage must outlive the operation: coroutine locals are fine across `co_await` in the same frame; in callback style the same data must become a **member**, not a local.
 
+**Stackful coroutine stacks are small.** In `asio::spawn` / `yield_context` code, do not allocate large fixed-size objects as coroutine locals. A local such as `std::array<char, 256 * 1024>` can overflow the coroutine stack; default stack sizes are often around 64-128 KiB depending on Boost.Context/platform/configuration. Put large buffers on the heap instead, e.g. `std::vector<char> buf(256 * 1024)` or `auto buf = std::make_shared<std::vector<char>>(...)`. Increasing the coroutine stack with Boost.Coroutine attributes is possible, but prefer heap buffers for large I/O storage.
+
 **Connections must outlive their handlers.** `enable_shared_from_this`, and capture `self` in *every* `co_spawn` / handler — read loop, write loop, and each timer.
 
 **Frame with composed reads.** `async_read` (fills the buffer exactly) for a length prefix and then the body; never `async_read_some`, which returns short.
@@ -59,6 +61,9 @@ Language, not library: the chrono literals `250ms` / `30s` are **C++14**. For a 
 **Re-arming a timer resolves the pending wait with `operation_aborted`.** In an idle-timeout loop that is the signal to keep waiting, not an error.
 
 **GCC needs `-fcoroutines`** for the C++20 style, and header-only Boost needs `BOOST_ERROR_CODE_HEADER_ONLY` defined in exactly one place (CMake).
+
+**Start stackful coroutines explicitly.** The 2-arg form of `asio::spawn` only starts on its own in older versions. In newer versions, do not ignore the returned completion token - it must be invoked for the routine to actually run. To start the routine without needing to explicitly wait on it, use the 3-arg form with `asio::detached`. Remember, if you are not sure which to use, ask or otherwise explicitly note which kind you assumed.
+
 
 ## Common mistakes
 
@@ -77,6 +82,8 @@ Language, not library: the chrono literals `250ms` / `30s` are **C++14**. For a 
 | Requiring the `Boost::system` component | Header-only since 1.74: `Boost::headers` + `BOOST_ERROR_CODE_HEADER_ONLY`. Only classic (pre-1.66) needs the link |
 | Missing `-fcoroutines` on GCC | Build fails — add `$<$<CXX_COMPILER_ID:GNU>:-fcoroutines>` |
 | Writing coroutine code for a Boost that predates it | Do Step 1 first |
+| Calling `asio::spawn(ex, fn)` and ignoring the returned deferred operation | Use `asio::spawn(ex, fn, asio::detached)` for fire-and-forget stackful coroutines, or deliberately return/await the operation |
+| Large `std::array` or object local inside `asio::spawn` coroutine | Use heap-backed storage such as `std::vector`, `unique_ptr`, `shared_ptr`, or a session member; stackful coroutine stacks are small |
 
 ## Boost.Asio vs standalone Asio
 
@@ -118,8 +125,10 @@ Check the code you just wrote against this list:
 - [ ] Errors are handled, not swallowed: `as_tuple(use_awaitable)` destructured, or the callback's `ec` checked, on every op.
 - [ ] `operation_aborted` distinguished from real errors wherever a timer is re-armed or an op is cancelled.
 - [ ] Acceptor sets `reuse_address`; shutdown path closes the acceptor and drains sessions.
+- [ ] Stackful `spawn` examples either pass an explicit completion token such as `asio::detached`, or intentionally return/initiate the deferred operation.
 - [ ] CMake has the standard, `-fcoroutines` for GCC (C++20 only), `BOOST_ERROR_CODE_HEADER_ONLY` in one place, and `Boost::coroutine` only if using stackful `spawn`.
 - [ ] It compiles. Build it — most of the mistakes above are compile-time, and the version floors are only real once tested.
+- [ ] Stackful `spawn` coroutines do not place large buffers or large structs on the coroutine stack; use heap-backed storage for chunk buffers.
 
 ## Worked examples
 
